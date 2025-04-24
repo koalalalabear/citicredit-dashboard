@@ -1,4 +1,4 @@
-# citicredit-dashboard
+# View dashboards here
 Visualise credit card transactions at this website: [https://makeitrain.streamlit.app/]([url](https://makeitrain.streamlit.app/))
 ## how to use:
 1. Upload credit card statement
