@@ -4,6 +4,13 @@ import fitz  # PyMuPDF
 import streamlit as st
 from io import BytesIO
 from datetime import datetime
+import sys
+import os
+
+# Add the project root directory to the system path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from utils.mapping import load_mapping, save_mapping  # singular 'mapping'
 
 st.set_page_config(page_title="Citibank Statement Parser", layout="wide")
 st.title("📄 Citibank PDF Statement Parser")
@@ -30,35 +37,21 @@ def parse_transactions(text, year):
     pattern = r"""
         (?P<date>\d{2}\s[A-Z]{3})        # 17 JAN
         \s+
-        (?P<merchant>.+?)                # FAIRPRICE FINEST
+        (?P<merchant>.+?)                # BROTHERBIRD BAKEHOUSE
         \s+
-        (?:[A-Z]+\s+){1,3}               # Skip location (SINGAPORE SG)
-        (?P<amount>\d+\.\d{2})           # 12.10
+        (?:[A-Z]+\s+){1,3}               # Skip location (e.g., "SINGAPORE SG")
+        (?P<amount>\d+\.\d{2})           # 5.50
+        (?:\s+XXXX-XXXX-XXXX-\d{4})?     # Skip card number (optional)
     """
-
-    merchant_patterns = {
-        "Groceries": re.compile(r"little farms|fairprice|ntuc|7-eleven|cheers", re.IGNORECASE),
-        "Carbs": re.compile(r"epidor|bakery|toast|onalu|brotherbird", re.IGNORECASE),
-        "Sugar": re.compile(r"starbucks|fruce|candy|sweets", re.IGNORECASE),
-        "Beauty & Wellness": re.compile(r"yoga|guardian|watsons", re.IGNORECASE),
-    }
-
+    
     transactions = []
     for m in re.finditer(pattern, text, re.VERBOSE):
         try:
-            merchant_name = m.group("merchant").strip().lower()
-            category = ""
-            for cat, regex in merchant_patterns.items():
-                if regex.search(merchant_name):
-                    category = cat
-                    break
-
             transactions.append({
                 "Date": f"{m.group('date')} {year}",
                 "Merchant": m.group("merchant").strip(),
                 "Amount": float(m.group("amount")),
                 "Month": m.group('date').split()[1],
-                "Category": category,
             })
         except Exception:
             continue
@@ -72,7 +65,7 @@ if uploaded_file:
     year = get_year_from_filename(file_name)
 
     st.sidebar.success(f"✅ Loaded: {file_name}")
-    st.sidebar.markdown(f"**Detected Year:** `{year}`")
+    st.sidebar.markdown(f"**Detected Year:** {year}")
 
     # Extract text from PDF
     text = extract_text_from_pdf(uploaded_file.read())
@@ -90,34 +83,56 @@ if uploaded_file:
 
             st.success(f"✅ Found {len(df)} transactions")
 
-            # --- Dynamic Category Input ---
-            custom_categories = st.text_input(
-                "✏️ Enter custom category options (comma-separated)",
-                value="Groceries, Carbs, Sugar, Beauty & Wellness, Food, Transport"
-            )
-            category_options = [c.strip() for c in custom_categories.split(",") if c.strip()]
+            # --- Load merchant-category mappings from utils folder ---
+            merchant_to_category = load_mapping()
+
+            # --- Assign categories based on existing mapping ---
+            df["Category"] = df["Merchant"].map(merchant_to_category).fillna("")
 
             # --- Manual Categorization ---
             if "" in df["Category"].values:
                 st.subheader("📝 Categorize Unlabeled Transactions")
-                uncategorized_df = df[df["Category"] == ""].copy()
 
-                for i, row in uncategorized_df.iterrows():
+                # Get the unique merchants with no category assigned
+                uncategorized_merchants = df[df["Category"] == ""]["Merchant"].drop_duplicates()
+
+                # Filter out merchants that already have a category
+                uncategorized_merchants = uncategorized_merchants[~uncategorized_merchants.isin(merchant_to_category.keys())]
+
+                custom_categories = st.text_input(
+                    "✏️ Enter custom category options (comma-separated)",
+                    value="Groceries, Carbs, Sugar, Beauty & Wellness, Food, Transport"
+                )
+                category_options = [c.strip() for c in custom_categories.split(",") if c.strip()]
+
+                # Iterate through distinct uncategorized merchants
+                for merchant in uncategorized_merchants:
+                    # Filter the dataframe based on the merchant (only get one row per merchant)
+                    merchant_row = df[df["Merchant"] == merchant].iloc[0]  # Get the first row for that merchant
+                    
+                    # Display the categorization options
                     col1, col2, col3 = st.columns([2, 2, 3])
                     with col1:
-                        st.markdown(f"**{row['Date'].strftime('%d %b %Y')}**")
+                        st.markdown(f"**{merchant_row['Date'].strftime('%d %b %Y')}**")
                     with col2:
-                        st.markdown(f"_{row['Merchant']}_")
+                        st.markdown(f"_{merchant_row['Merchant']}_")
                     with col3:
                         selected = st.selectbox(
                             "Select Category",
                             options=[""] + category_options,
-                            key=f"cat_{i}"
+                            key=f"cat_{merchant}"
                         )
                         if selected:
-                            df.at[i, "Category"] = selected
+                            # Update the category for all rows of this merchant
+                            df.loc[df["Merchant"] == merchant, "Category"] = selected
+                            # Update mapping for future use
+                            merchant_to_category[merchant] = selected
+
+                # Save updated mapping after categorization
+                save_mapping(merchant_to_category)
 
             # --- Data Table ---
+            # After manual categorization, show the updated DataFrame with the correct categories
             st.dataframe(df.sort_values("Date"), use_container_width=True)
 
             # --- Summary ---
@@ -156,8 +171,6 @@ if uploaded_file:
 
                 with col2:
                     st.dataframe(category_summary.reset_index().rename(columns={"Amount": "Total Spend"}))
-
-
 
             # --- Download Button ---
             csv = df.to_csv(index=False).encode("utf-8")
