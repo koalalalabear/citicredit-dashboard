@@ -64,22 +64,34 @@ def parse_month_end(text, year):
     pattern = re.compile(r"""
         (?P<date>\d{2}\s\w{3})\s+                                 # e.g. 01 Mar
         (?P<description>[A-Z0-9 -]+(?:\s[A-Z0-9 -]+)*)\s+         # Bolded description
-        (?P<info>.*?)(?=\s+\d{1,3}(?:,\d{3})*\.\d{2}|\s{2,})      # Info (non-greedy) until a number
-        (?:(?P<withdrawal>\d{1,3}(?:,\d{3})*\.\d{2})|(?:-))?\s*   # Withdrawal (optional)
-        (?:(?P<deposit>\d{1,3}(?:,\d{3})*\.\d{2})|(?:-))?\s*      # Deposit (optional)
-        (?P<balance>\d{1,3}(?:,\d{3})*\.\d{2})                    # Balance
+        (?P<info>.*?)(?=\s+\d{1,3}(?:,\d{3})*\.\d{2})             # Info (non-greedy) until a number
+        \s+(?P<amount1>\d{1,3}(?:,\d{3})*\.\d{2})?                # First amount (withdrawal OR deposit)
+        (?:\s+(?P<amount2>\d{1,3}(?:,\d{3})*\.\d{2}))?            # Second amount (optional)
+        \s+(?P<balance>\d{1,3}(?:,\d{3})*\.\d{2})                 # Balance
     """, re.VERBOSE | re.MULTILINE)
-    
+        
 
 
     transactions = []
     for match in pattern.finditer(text):
         data = match.groupdict()
-        for field in ['withdrawal', 'deposit', 'balance']:
-            if data[field]:
-                data[field] = float(data[field].replace(',', ''))
-            else:
-                data[field] = None
+        amount1 = data.pop('amount1')
+        amount2 = data.pop('amount2')
+
+        # Logic to decide withdrawal vs deposit
+        if amount2:  # If there are two amounts
+            data['withdrawal'] = float(amount1.replace(',', '')) if amount1 else None
+            data['deposit'] = float(amount2.replace(',', '')) if amount2 else None
+        else:
+            # Only one amount => assume it's a deposit if balance increases, else withdrawal
+            data['withdrawal'] = None
+            data['deposit'] = float(amount1.replace(',', '')) if amount1 else None
+
+        if data['balance']:
+            data['balance'] = float(data['balance'].replace(',', ''))
+        else:
+            data['balance'] = None
+
         data['date'] = f"{data['date']} {year}"
         transactions.append(data)
 

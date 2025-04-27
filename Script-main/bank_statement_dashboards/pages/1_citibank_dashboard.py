@@ -4,6 +4,12 @@ import fitz  # PyMuPDF
 import streamlit as st
 from io import BytesIO
 from datetime import datetime
+import sys
+import os
+
+# Add the project root directory to the system path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.mapping import load_mapping, save_mapping  
 
 st.set_page_config(page_title="Citibank Statement Parser", layout="wide")
 st.title("📄 Citibank PDF Statement Parser")
@@ -24,44 +30,44 @@ def get_year_from_filename(name):
     match = re.search(r'(\d{4})', name)
     return int(match.group(1)) if match else datetime.now().year
 
-# --- Function to parse transactions with auto-categorization ---
 def parse_transactions(text, year):
-    """Extract transactions from PDF text and categorize using regex."""
-    pattern = r"""
-        (?P<date>\d{2}\s[A-Z]{3})        # 17 JAN
-        \s+
-        (?P<merchant>.+?)                # FAIRPRICE FINEST
-        \s+
-        (?:[A-Z]+\s+){1,3}               # Skip location (SINGAPORE SG)
-        (?P<amount>\d+\.\d{2})           # 12.10
     """
-
-    merchant_patterns = {
-        "Groceries": re.compile(r"little farms|fairprice|ntuc|7-eleven|cheers", re.IGNORECASE),
-        "Carbs": re.compile(r"epidor|bakery|toast|onalu|brotherbird", re.IGNORECASE),
-        "Sugar": re.compile(r"starbucks|fruce|candy|sweets", re.IGNORECASE),
-        "Beauty & Wellness": re.compile(r"yoga|guardian|watsons", re.IGNORECASE),
-    }
+    Improved parser for Citibank Singapore statements
+    Handles both traditional and newer statement formats
+    """
+    # Try multiple patterns to handle different statement versions
+    patterns = [
+        # Pattern 1: Traditional format
+        r"(?P<date>\d{2}\s[A-Z]{3})\s+(?P<merchant>.+?)\s+(?:[A-Z]+\s+){1,3}(?P<amount>-?\d+\.\d{2})",
+        
+        # Pattern 2: Newer format with different spacing
+        r"(?P<date>\d{2}/\d{2})\s+(?P<merchant>.+?)\s+SGD\s+(?P<amount>-?\d+\.\d{2})",
+        
+        # Pattern 3: For transactions with reference numbers
+        r"(?P<date>\d{2}\s[A-Z]{3})\s+(?P<ref>\d+)\s+(?P<merchant>.+?)\s+(?P<amount>-?\d+\.\d{2})"
+    ]
 
     transactions = []
-    for m in re.finditer(pattern, text, re.VERBOSE):
-        try:
-            merchant_name = m.group("merchant").strip().lower()
-            category = ""
-            for cat, regex in merchant_patterns.items():
-                if regex.search(merchant_name):
-                    category = cat
-                    break
-
-            transactions.append({
-                "Date": f"{m.group('date')} {year}",
-                "Merchant": m.group("merchant").strip(),
-                "Amount": float(m.group("amount")),
-                "Month": m.group('date').split()[1],
-                "Category": category,
-            })
-        except Exception:
-            continue
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, re.VERBOSE):
+            try:
+                date_str = m.group('date')
+                if '/' in date_str:  # Handle DD/MM format
+                    day, month = date_str.split('/')
+                    month = datetime.strptime(month, '%m').strftime('%b').upper()
+                    date_str = f"{day} {month}"
+                
+                transactions.append({
+                    "Date": f"{date_str} {year}",
+                    "Merchant": m.group("merchant").strip(),
+                    "Amount": float(m.group("amount")),
+                    "Month": date_str.split()[1] if ' ' in date_str else month
+                })
+            except Exception:
+                continue
+        if transactions:  # Stop if we found matches with this pattern
+            break
+            
     return transactions
 
 # --- Sidebar Upload ---
@@ -90,33 +96,51 @@ if uploaded_file:
 
             st.success(f"✅ Found {len(df)} transactions")
 
-            # --- Dynamic Category Input ---
-            custom_categories = st.text_input(
-                "✏️ Enter custom category options (comma-separated)",
-                value="Groceries, Carbs, Sugar, Beauty & Wellness, Food, Transport"
-            )
-            category_options = [c.strip() for c in custom_categories.split(",") if c.strip()]
+            # --- Load merchant-category mappings from utils folder ---
+            merchant_to_category = load_mapping()
+
+            # --- Assign categories based on existing mapping ---
+            df["Category"] = df["Merchant"].map(merchant_to_category).fillna("")
 
             # --- Manual Categorization ---
             if "" in df["Category"].values:
                 st.subheader("📝 Categorize Unlabeled Transactions")
-                uncategorized_df = df[df["Category"] == ""].copy()
 
-                for i, row in uncategorized_df.iterrows():
-                    col1, col2, col3 = st.columns([2, 2, 3])
-                    with col1:
-                        st.markdown(f"**{row['Date'].strftime('%d %b %Y')}**")
-                    with col2:
-                        st.markdown(f"_{row['Merchant']}_")
-                    with col3:
-                        selected = st.selectbox(
-                            "Select Category",
-                            options=[""] + category_options,
-                            key=f"cat_{i}"
-                        )
-                        if selected:
-                            df.at[i, "Category"] = selected
+                # Get the unique merchants with no category assigned
+                uncategorized_merchants = df[df["Category"] == ""]["Merchant"].unique()
 
+                custom_categories = st.text_input(
+                    "✏️ Enter custom category options (comma-separated)",
+                    value="Groceries, Carbs, Sugar, Beauty & Wellness, Food, Transport"
+                )
+                category_options = [c.strip() for c in custom_categories.split(",") if c.strip()]
+
+                for merchant in uncategorized_merchants:
+                    # Filter the dataframe based on the merchant
+                    merchant_rows = df[df["Merchant"] == merchant]
+                    
+                    for i, row in merchant_rows.iterrows():
+                        col1, col2, col3 = st.columns([2, 2, 3])
+                        with col1:
+                            st.markdown(f"**{row['Date'].strftime('%d %b %Y')}**")
+                        with col2:
+                            st.markdown(f"_{row['Merchant']}_")
+                        with col3:
+                            selected = st.selectbox(
+                                "Select Category",
+                                options=[""] + category_options,
+                                key=f"cat_{i}"
+                            )
+                            if selected:
+                                df.at[i, "Category"] = selected
+                                # Update mapping for future use
+                                merchant_to_category[row["Merchant"]] = selected
+
+                # Save updated mapping after categorization
+                save_mapping(merchant_to_category)
+            
+            
+            
             # --- Data Table ---
             st.dataframe(df.sort_values("Date"), use_container_width=True)
 
@@ -156,8 +180,6 @@ if uploaded_file:
 
                 with col2:
                     st.dataframe(category_summary.reset_index().rename(columns={"Amount": "Total Spend"}))
-
-
 
             # --- Download Button ---
             csv = df.to_csv(index=False).encode("utf-8")
