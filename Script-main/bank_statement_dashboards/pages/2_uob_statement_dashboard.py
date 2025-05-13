@@ -4,6 +4,8 @@ import fitz  # PyMuPDF
 import streamlit as st
 from io import BytesIO
 from datetime import datetime
+from utils.mapping import load_mapping, save_mapping
+
 
 st.set_page_config(page_title="Banking account dashboard", layout="wide")
 st.title("📄 UOB bank account dashboard")
@@ -126,9 +128,16 @@ def parse_month_end(text, year):
 
     # Reorder the DataFrame columns
     df = df[["date", "clean_description", "clean_withdrawal", "deposit", "balance"]]
+    
+    # Load existing merchant-category mappings
+    merchant_to_category = load_mapping()
 
+    # Assign categories based on the cleaned description (merchant name)
+    df["Category"] = df["clean_description"].map(merchant_to_category).fillna("")
 
+    # Return the DataFrame with the new Category column
     return df
+
 
 # --- Extract Balance B/F (if exists) ---
 def get_balance_bf(df):
