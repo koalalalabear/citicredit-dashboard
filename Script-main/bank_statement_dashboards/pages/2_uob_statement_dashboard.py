@@ -160,6 +160,7 @@ def get_balance_cf(df):
 uploaded_file = st.sidebar.file_uploader("Upload your UOB bank statement PDF", type=["pdf"])
 
 if uploaded_file:
+
     year = st.sidebar.number_input("Select year", min_value=2000, max_value=2100, value=datetime.now().year)
 
     st.sidebar.success(f"✅ Loaded: {uploaded_file.name}")
@@ -170,6 +171,7 @@ if uploaded_file:
     if not text.strip():
         st.error("❌ No text extracted — this may be a scanned PDF.")
     else:
+
         df = parse_month_end(text, year)
 
         if df.empty:
@@ -199,3 +201,5 @@ if uploaded_file:
             # ✅ Display the cleaned DataFrame
             st.subheader("📊 Transaction Table")
             st.dataframe(df_cleaned)
+else:
+    st.info("📤 Upload a UOB bank statement PDF using the sidebar to get started.")
