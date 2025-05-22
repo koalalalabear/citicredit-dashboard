@@ -34,15 +34,25 @@ def extract_alphabets(desc: str, info: str) -> str:
 
 # --- 3) Parse transactions robustly ---
 def parse_month_end(text: str, year: int) -> pd.DataFrame:
-    # Main regex: date / description / info / amount1 / amount2 / balance
+     # Main regex: date / description + info / amount1 / amount2 / balance
     pattern = re.compile(r"""
         (?P<date>\d{2}\s\w{3})\s+                                       # e.g. 26 Sep
-        (?P<description>.+?)                                            # non‑greedy, multi‑line
-        (?P<info>.*?)(?=\s+\d{1,3}(?:,\d{3})*\.\d{2})                   # info until number
-        \s+(?P<amount1>\d{1,3}(?:,\d{3})*\.\d{2})?                      # first amount
-        (?:\s+(?P<amount2>\d{1,3}(?:,\d{3})*\.\d{2}))?                  # second amount
+        (?P<desc_info>.+?)                                              # full desc+info blob
+        (?=\s+\d{1,3}(?:,\d{3})*\.\d{2}(\s+\d{1,3}(?:,\d{3})*\.\d{2})?\s+\d{1,3}(?:,\d{3})*\.\d{2})  # lookahead for amount/balance
+        \s+(?P<amount1>\d{1,3}(?:,\d{3})*\.\d{2})?                      # amount 1
+        (?:\s+(?P<amount2>\d{1,3}(?:,\d{3})*\.\d{2}))?                  # amount 2
         \s+(?P<balance>\d{1,3}(?:,\d{3})*\.\d{2})                       # balance
-    """,  re.VERBOSE | re.MULTILINE | re.DOTALL)
+    """, re.VERBOSE | re.MULTILINE | re.DOTALL)
+
+    # # Main regex: date / description / info / amount1 / amount2 / balance
+    # pattern = re.compile(r"""
+    #     (?P<date>\d{2}\s\w{3})\s+                                       # e.g. 26 Sep
+    #     (?P<description>.+?)                                            # non‑greedy, multi‑line
+    #     (?P<info>.*?)(?=\s+\d{1,3}(?:,\d{3})*\.\d{2})                   # info until number
+    #     \s+(?P<amount1>\d{1,3}(?:,\d{3})*\.\d{2})?                      # first amount
+    #     (?:\s+(?P<amount2>\d{1,3}(?:,\d{3})*\.\d{2}))?                  # second amount
+    #     \s+(?P<balance>\d{1,3}(?:,\d{3})*\.\d{2})                       # balance
+    # """,  re.VERBOSE | re.MULTILINE | re.DOTALL)
 
     transactions = []
     prev_bal = None
