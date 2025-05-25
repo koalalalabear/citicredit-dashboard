@@ -387,10 +387,8 @@ if uploaded_file:
             df_clean.loc[mask, 'deposit'] = df.loc[mask, 'withdrawal']
             df_clean.loc[mask, 'withdrawal'] = 0
             # Reset index
-            df_clean = df_clean.reset_index(drop=True))
+            df_clean = df_clean.reset_index(drop=True)
 
-                        
-            
             # Show table & download
             st.subheader("📊 Transactions")
             st.dataframe(df_clean[["date", "transaction_type", "clean_description", "withdrawal", "deposit", "balance"]])
