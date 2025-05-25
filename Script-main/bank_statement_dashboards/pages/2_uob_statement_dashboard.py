@@ -387,7 +387,7 @@ if uploaded_file:
             df_clean.loc[mask, 'deposit'] = df.loc[mask, 'withdrawal']
             df_clean.loc[mask, 'withdrawal'] = 0
             # Reset index
-            st.dataframe(df_clean.reset_index(drop=True))
+            df_clean = df_clean.reset_index(drop=True))
 
                         
             
