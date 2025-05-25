@@ -411,3 +411,5 @@ if uploaded_file:
                 "Download CSV", csv,
                 "uob_transactions.csv", "text/csv"
             )
+else:
+    st.info("📤 Upload a UOB PDF bank statement using the sidebar to get started.")
