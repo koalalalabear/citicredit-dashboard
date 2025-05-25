@@ -348,16 +348,7 @@ if uploaded_file:
     if not text.strip():
         st.error("No text extracted – is it a scanned PDF?")
     else:
-        # Show raw text and formatting info for debugging
-        with st.expander("🔍 View Raw PDF Text (for debugging)"):
-            st.text(text[:2000] + "..." if len(text) > 2000 else text)
-            
-        with st.expander("🎨 View Formatting Info (for debugging)"):
-            if formatted_blocks:
-                bold_blocks = [block for block in formatted_blocks[:20] if block["bold"]]
-                st.json(bold_blocks)
-            else:
-                st.info("No formatting information extracted")
+
         
         df = parse_credit_card_transactions(text, formatted_blocks, year)
         
